@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Task Manager</title>
+  <meta name="description" content="AI 自動化工作流控制台 — 透過手機 md 檔控制電腦端 AI Agent" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body>
+  <!-- App Shell -->
+  <div id="app" class="app-shell">
+
+    <!-- Top Navigation Bar -->
+    <header class="topbar" id="topbar">
+      <div class="topbar-left">
+        <div class="logo">
+          <span class="logo-icon">⚡</span>
+          <span class="logo-text">Agent Task Manager</span>
+        </div>
+        <div class="topbar-status" id="orchestratorStatusBadge">
+          <span class="status-dot idle"></span>
+          <span class="status-label">待機中</span>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="sync-indicator" id="syncIndicator" title="Obsidian Sync">
+          <span class="sync-icon">🔄</span>
+          <span class="sync-label">Obsidian</span>
+        </div>
+        <button class="btn-icon" id="btnRefreshAll" title="重新整理所有資料">⟳</button>
+        <button class="btn-icon" id="btnAddProject" title="新增專案">＋</button>
+      </div>
+    </header>
+
+    <!-- Main Layout -->
+    <div class="main-layout">
+
+      <!-- Panel 1: Projects Sidebar -->
+      <aside class="sidebar" id="sidebar">
+        <div class="panel-header">
+          <span class="panel-title">🗂 專案</span>
+          <span class="panel-count" id="projectCount">0</span>
+        </div>
+        <div class="project-list" id="projectList">
+          <div class="skeleton-list">
+            <div class="skeleton-item"></div>
+            <div class="skeleton-item"></div>
+          </div>
+        </div>
+        <div class="sidebar-footer">
+          <button class="btn-secondary btn-full" id="btnManageProjects">管理專案設定</button>
+        </div>
+      </aside>
+
+      <!-- Main Content Area -->
+      <main class="content-area">
+
+        <!-- Panel 2: Workflow Designer -->
+        <section class="panel workflow-panel" id="workflowPanel">
+          <div class="panel-header">
+            <span class="panel-title">🔄 工作流設計器</span>
+            <div class="panel-controls">
+              <select class="select-sm" id="modeSelect">
+                <option value="creative">Creative 模式</option>
+                <option value="product">Product 模式</option>
+              </select>
+              <select class="select-sm" id="targetSelect">
+                <option value="cli">CLI (Terminal)</option>
+                <option value="gui">GUI (IDE)</option>
+              </select>
+              <div class="control-buttons">
+                <button class="btn-run" id="btnStart" title="啟動 Orchestrator">▶ 啟動</button>
+                <button class="btn-pause" id="btnPause" title="暫停">⏸</button>
+                <button class="btn-stop" id="btnStop" title="停止">⏹</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Task Flow Visualization -->
+          <div class="workflow-container" id="workflowContainer">
+            <div class="workflow-empty" id="workflowEmpty">
+              <div class="empty-icon">📋</div>
+              <p>選擇左側專案以載入工作流</p>
+            </div>
+            <div class="task-flow" id="taskFlow" style="display:none;"></div>
+          </div>
+
+          <!-- Sys Status Bar -->
+          <div class="sys-status-bar" id="sysStatusBar">
+            <div class="status-chip" id="statusChip">
+              <span class="chip-dot"></span>
+              <span class="chip-label">RUNNING</span>
+            </div>
+            <div class="progress-info">
+              <span id="taskProgress">0 / 0 任務完成</span>
+              <div class="token-bar">
+                <div class="token-fill" id="tokenFill" style="width:0%"></div>
+              </div>
+              <span class="token-label" id="tokenLabel">0 / 0 tokens</span>
+            </div>
+            <div class="branch-info">
+              <span class="branch-icon">⎇</span>
+              <span id="branchName">main</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Bottom Row: Agent Console + Execution Log + Results -->
+        <div class="bottom-row">
+
+          <!-- Panel 3: Agent Console -->
+          <section class="panel agent-panel" id="agentPanel">
+            <div class="panel-header">
+              <span class="panel-title">🤖 Agent 控制台</span>
+              <button class="btn-icon-sm" id="btnDetectAgent" title="偵測 Agent 狀態">⟳</button>
+            </div>
+            <div class="agent-content">
+              <div class="agent-target-row">
+                <div class="agent-target-card" id="cliCard">
+                  <div class="target-header">
+                    <span class="target-icon">💻</span>
+                    <span class="target-label">CLI Agent</span>
+                    <div class="agent-status-badge unknown" id="cliStatusBadge">
+                      <span class="dot"></span>
+                      <span>偵測中</span>
+                    </div>
+                  </div>
+                  <div class="target-info" id="cliInfo">
+                    <span class="info-label">指令:</span>
+                    <code class="info-value" id="cliCommand">claude</code>
+                  </div>
+                </div>
+                <div class="agent-target-card" id="guiCard">
+                  <div class="target-header">
+                    <span class="target-icon">🖥</span>
+                    <span class="target-label">GUI Agent</span>
+                    <div class="agent-status-badge unknown" id="guiStatusBadge">
+                      <span class="dot"></span>
+                      <span>未知</span>
+                    </div>
+                  </div>
+                  <div class="target-info">
+                    <span class="info-label">目標:</span>
+                    <code class="info-value" id="guiTarget">antigravity</code>
+                  </div>
+                </div>
+              </div>
+
+              <div class="current-task-card" id="currentTaskCard">
+                <div class="task-card-header">
+                  <span class="task-badge" id="currentTaskBadge">TASK_B</span>
+                  <span class="task-card-title" id="currentTaskTitle">等待中...</span>
+                </div>
+                <div class="task-prompt-preview" id="taskPromptPreview">
+                  選擇並啟動專案後顯示當前任務指令
+                </div>
+              </div>
+
+              <!-- Manual Prompt Override -->
+              <div class="prompt-override">
+                <textarea class="prompt-input" id="promptInput" rows="2" placeholder="手動輸入 prompt 或 /指令（覆蓋當前任務指令）..."></textarea>
+                <button class="btn-inject" id="btnInject">注入</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Panel 4: Execution Log -->
+          <section class="panel log-panel" id="logPanel">
+            <div class="panel-header">
+              <span class="panel-title">📋 執行日誌</span>
+              <div class="log-controls">
+                <label class="toggle-label">
+                  <input type="checkbox" id="autoScrollToggle" checked />
+                  <span>自動捲動</span>
+                </label>
+                <button class="btn-icon-sm" id="btnClearLog" title="清除顯示">✕</button>
+              </div>
+            </div>
+            <div class="log-container" id="logContainer">
+              <div class="log-connecting">
+                <span class="pulse-dot"></span>
+                <span>連接日誌串流...</span>
+              </div>
+            </div>
+            <div class="log-footer">
+              <span class="log-count" id="logCount">0 行</span>
+              <span class="ws-status" id="wsStatus">🔴 未連接</span>
+            </div>
+          </section>
+
+          <!-- Panel 5: Results Log -->
+          <section class="panel results-panel" id="resultsPanel">
+            <div class="panel-header">
+              <span class="panel-title">📊 成果記錄</span>
+              <button class="btn-icon-sm" id="btnRefreshResults" title="重新整理">⟳</button>
+            </div>
+            <div class="results-summary" id="resultsSummary">
+              <div class="summary-stat">
+                <span class="stat-num" id="resultsCompleted">-</span>
+                <span class="stat-label">已完成</span>
+              </div>
+              <div class="summary-stat">
+                <span class="stat-num" id="resultsTotal">-</span>
+                <span class="stat-label">總任務</span>
+              </div>
+              <div class="summary-stat">
+                <span class="stat-num" id="resultsLastUpdate">-</span>
+                <span class="stat-label">最後更新</span>
+              </div>
+            </div>
+            <div class="results-list" id="resultsList">
+              <div class="results-empty">選擇專案以載入成果記錄</div>
+            </div>
+          </section>
+
+        </div><!-- end bottom-row -->
+
+      </main>
+    </div><!-- end main-layout -->
+  </div><!-- end app-shell -->
+
+  <!-- Modal: Add/Edit Project -->
+  <div class="modal-overlay" id="projectModal" style="display:none;">
+    <div class="modal glass-card">
+      <div class="modal-header">
+        <h2 class="modal-title" id="projectModalTitle">新增專案</h2>
+        <button class="btn-icon modal-close" id="closeProjectModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="projectForm">
+          <div class="form-row">
+            <label class="form-label">專案 ID <span class="required">*</span></label>
+            <input id="fProjectId" class="form-input" type="text" placeholder="my_project_001" required />
+          </div>
+          <div class="form-row">
+            <label class="form-label">專案名稱 <span class="required">*</span></label>
+            <input id="fProjectName" class="form-input" type="text" placeholder="我的 AI 開發專案" required />
+          </div>
+          <div class="form-row">
+            <label class="form-label">描述</label>
+            <input id="fProjectDesc" class="form-input" type="text" placeholder="簡短說明此專案" />
+          </div>
+          <div class="form-row">
+            <label class="form-label">roadmap.md 路徑 <span class="required">*</span></label>
+            <input id="fRoadmapPath" class="form-input font-mono" type="text" placeholder="C:/Users/.../roadmap.md" required />
+            <span class="form-hint">可設定為 Obsidian Vault 內的 md 檔路徑</span>
+          </div>
+          <div class="form-row">
+            <label class="form-label">results_log.md 路徑</label>
+            <input id="fResultsPath" class="form-input font-mono" type="text" placeholder="自動設為與 roadmap.md 同目錄" />
+          </div>
+          <div class="form-row">
+            <label class="form-label">Obsidian Vault 路徑</label>
+            <input id="fVaultPath" class="form-input font-mono" type="text" placeholder="C:/Users/.../ObsidianVault（可選）" />
+          </div>
+          <div class="form-grid-2">
+            <div class="form-row">
+              <label class="form-label">工作流模式</label>
+              <select id="fWorkflowMode" class="form-select">
+                <option value="creative">Creative</option>
+                <option value="product">Product</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label class="form-label">RPA 目標</label>
+              <select id="fRpaTarget" class="form-select">
+                <option value="cli">CLI Terminal</option>
+                <option value="gui">GUI IDE</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-grid-2">
+            <div class="form-row">
+              <label class="form-label">CLI 指令</label>
+              <input id="fCliCommand" class="form-input font-mono" type="text" value="claude" />
+            </div>
+            <div class="form-row">
+              <label class="form-label">GUI 目標 IDE</label>
+              <select id="fGuiTarget" class="form-select">
+                <option value="antigravity">Antigravity</option>
+                <option value="vscode">VS Code</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row toggle-row">
+            <label class="toggle-label">
+              <input type="checkbox" id="fGitEnabled" checked />
+              <span>啟用 Git Sync（commit &amp; push after tasks）</span>
+            </label>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="cancelProjectModal">取消</button>
+        <button class="btn-primary" id="saveProjectModal">儲存專案</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

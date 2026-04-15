@@ -32,6 +32,7 @@ from config import (
 from git_manager import GitManager
 from roadmap_parser import parse_roadmap, update_roadmap
 from rpa_controller import RPAController
+import rpa_registry  # Singleton registry — keeps RPAController outside serializable state
 
 from nodes.shared_nodes import (
     check_should_exit,
@@ -204,35 +205,50 @@ def build_product_graph() -> StateGraph:
 
 # --- Main execution ---
 
+# Module-level GitManager registry (same pattern as rpa_registry — avoids serialization issues)
+_git_managers: dict[str, GitManager] = {}
+
+
 def create_initial_state(
     mode: WorkflowMode,
     target: RPATarget,
     gui_target: str = "vscode",
     cli_command: str = "claude",
     dry_run: bool = False,
+    project_id: str = "default",
 ) -> dict[str, Any]:
-    """Create the initial state dictionary for the graph."""
+    """
+    Create the initial state dictionary for the graph.
+
+    IMPORTANT: RPAController is stored in rpa_registry (not in state dict)
+    to avoid msgpack serialization errors with LangGraph's SqliteSaver.
+    Only the string key 'rpa_key' is stored in the state.
+    """
     state = {
         "mode": mode.value,
-        "rpa_target": target,
+        "rpa_target": target.value,   # Store as string, not enum, for serialization
         "gui_target": gui_target,
         "cli_command": cli_command,
         "dry_run": dry_run,
+        "project_id": project_id,
         "should_exit": False,
         "exit_reason": None,
         "retry_count": 0,
         "context_compacted": False,
+        "rpa_key": project_id,        # Key into rpa_registry — replaces rpa_controller in state
+        "git_manager_key": project_id,  # Git manager also stored externally below
     }
 
-    # Initialize RPA controller
+    # Initialize RPA controller in registry (NOT in state)
     rpa = RPAController()
     if target == RPATarget.CLI and not dry_run:
         logger.info(f"Starting CLI process: {cli_command}")
         rpa.start_cli(cli_command)
-    state["rpa_controller"] = rpa
+    rpa_registry.register_rpa(rpa, key=project_id)
+    logger.info(f"RPAController registered with key: {project_id}")
 
-    # Initialize Git manager
-    state["git_manager"] = GitManager()
+    # Initialize Git manager — also kept in module-level dict to avoid serialization issues
+    _git_managers[project_id] = GitManager()
 
     return state
 
@@ -320,10 +336,14 @@ def run_orchestrator(
             )
 
         finally:
-            # Cleanup RPA resources
-            rpa = initial_state.get("rpa_controller")
+            # Cleanup RPA resources from registry
+            rpa_key = initial_state.get("rpa_key", "default")
+            rpa = rpa_registry.get_rpa(rpa_key)
             if rpa and rpa.cli.is_alive():
                 rpa.cli.terminate()
+            rpa_registry.unregister_rpa(rpa_key)
+            _git_managers.pop(rpa_key, None)
+            logger.info(f"Cleaned up RPA and Git resources for key: {rpa_key}")
 
     logger.info("Orchestrator shutdown complete.")
 

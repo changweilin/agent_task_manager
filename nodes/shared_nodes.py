@@ -19,6 +19,13 @@ from config import (
 from git_manager import GitManager
 from roadmap_parser import RoadmapState, parse_roadmap, update_roadmap
 
+
+def _get_git(state: dict) -> "GitManager":
+    """Retrieve GitManager from module-level registry or create a new instance."""
+    from orchestrator import _git_managers
+    git_key = state.get("git_manager_key", "default")
+    return _git_managers.get(git_key) or GitManager()
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,7 +34,7 @@ def parse_roadmap_and_sync(state: dict[str, Any]) -> dict[str, Any]:
     Node: Pull latest from Git, parse roadmap.md, and update graph state.
     This is typically the entry node for both workflows.
     """
-    git = state.get("git_manager") or GitManager()
+    git = _get_git(state)
 
     # Pull latest changes
     pull_ok = git.pull()
@@ -50,9 +57,8 @@ def parse_roadmap_and_sync(state: dict[str, Any]) -> dict[str, Any]:
         state["should_exit"] = True
         state["exit_reason"] = "paused"
 
-    # Update state
+    # Update state (no rpa_controller or git_manager objects here — only serializable values)
     state["roadmap"] = roadmap
-    state["git_manager"] = git
     state["current_task"] = roadmap.current_task
     state["sys_status"] = roadmap.sys_status.value
     state["should_exit"] = state.get("should_exit", False)
@@ -143,7 +149,7 @@ def handle_rate_limit(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     # Commit and push the updated roadmap
-    git = state.get("git_manager") or GitManager()
+    git = _get_git(state)
     git.commit_and_push(f"chore: rate limit sleep until {resume_time}")
 
     state["should_exit"] = True
@@ -193,7 +199,7 @@ def compact_context(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     # Commit
-    git = state.get("git_manager") or GitManager()
+    git = _get_git(state)
     git.commit_and_push("chore: compact context — summarize completed tasks")
 
     state["context_compacted"] = True

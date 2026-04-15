@@ -1,0 +1,33 @@
+{
+  "projects": [
+    {
+      "id": "agent_task_manager_demo",
+      "name": "Agent Task Manager Demo",
+      "description": "示範用專案：C 語言效能優化模組",
+      "roadmap_path": "C:/Users/user/Documents/app/agent_task_manager/roadmap.md",
+      "results_log_path": "C:/Users/user/Documents/app/agent_task_manager/results_log.md",
+      "obsidian_vault_path": null,
+      "git_enabled": true,
+      "git_remote": "origin",
+      "git_default_branch": "main",
+      "workflow_mode": "creative",
+      "rpa_target": "cli",
+      "cli_command": "claude",
+      "gui_target": "antigravity",
+      "active": true
+    }
+  ],
+  "active_project_id": "agent_task_manager_demo",
+  "web_server": {
+    "host": "0.0.0.0",
+    "port": 7878,
+    "auto_open_browser": true
+  },
+  "sync": {
+    "primary": "obsidian",
+    "obsidian_sync_enabled": true,
+    "git_sync_enabled": false,
+    "git_sync_on_task_complete": true,
+    "git_sync_on_task_start": false
+  }
+}

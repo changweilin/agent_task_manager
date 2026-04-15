@@ -30,3 +30,9 @@ pytest>=7.0.0
 
 # GitHub API (optional, for PR creation)
 requests>=2.31.0
+
+# Web UI Server
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+websockets>=12.0
+pydantic>=2.0.0

@@ -11,6 +11,7 @@ from config import AgentState, RPATarget
 from git_manager import GitManager
 from roadmap_parser import update_roadmap
 from rpa_controller import RPAController
+import rpa_registry
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +22,10 @@ def detect_agent_state_and_focus(state: dict[str, Any]) -> dict[str, Any]:
     For CLI: detect IDLE vs WORKING state.
     For GUI: attempt to focus the IDE window.
     """
-    rpa: RPAController = state.get("rpa_controller") or RPAController()
-    target = state.get("rpa_target", RPATarget.CLI)
-    state["rpa_controller"] = rpa
+    rpa_key = state.get("rpa_key", "default")
+    rpa: RPAController = rpa_registry.get_rpa(rpa_key) or RPAController()
+    target_str = state.get("rpa_target", RPATarget.CLI.value)
+    target = RPATarget(target_str) if isinstance(target_str, str) else target_str
 
     if target == RPATarget.CLI:
         # Check CLI agent state
@@ -71,8 +73,10 @@ def inject_prompt_via_rpa(state: dict[str, Any]) -> dict[str, Any]:
         state["injection_success"] = False
         return state
 
-    rpa: RPAController = state["rpa_controller"]
-    target = state.get("rpa_target", RPATarget.CLI)
+    rpa_key = state.get("rpa_key", "default")
+    rpa: RPAController = rpa_registry.get_rpa(rpa_key) or RPAController()
+    target_str = state.get("rpa_target", RPATarget.CLI.value)
+    target = RPATarget(target_str) if isinstance(target_str, str) else target_str
 
     # Build the prompt from task instructions
     prompt = _build_prompt(task)
@@ -115,7 +119,10 @@ def evaluate_and_route(state: dict[str, Any]) -> dict[str, Any]:
         state["next_action"] = "exit"
         return state
 
-    git: GitManager = state.get("git_manager") or GitManager()
+    git_key = state.get("git_manager_key", "default")
+    # Import here to avoid circular imports; access the module-level registry
+    from orchestrator import _git_managers
+    git: GitManager = _git_managers.get(git_key) or GitManager()
 
     if validation_passed:
         logger.info(f"Task {task.name} validation PASSED.")
