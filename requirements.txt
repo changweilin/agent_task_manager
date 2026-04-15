@@ -1,0 +1,32 @@
+# GitOps AI Orchestrator — Dependencies
+# Supports both Creative Factory and Product Factory workflows
+
+# Core state machine
+langgraph>=0.2.0
+langgraph-checkpoint-sqlite>=1.0.0
+
+# Git operations
+gitpython>=3.1.40
+
+# YAML parsing
+pyyaml>=6.0
+
+# CLI process management (Windows)
+wexpect>=4.0.0; sys_platform == "win32"
+
+# CLI process management (Unix)
+pexpect>=4.8.0; sys_platform != "win32"
+
+# GUI automation
+pyautogui>=0.9.54
+pyperclip>=1.8.2
+
+# Windows window management
+pywinauto>=0.6.8; sys_platform == "win32"
+
+# BDD testing (Product Factory)
+pytest-bdd>=7.0.0
+pytest>=7.0.0
+
+# GitHub API (optional, for PR creation)
+requests>=2.31.0

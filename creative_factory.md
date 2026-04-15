@@ -3,7 +3,7 @@
 You are a Senior Python AI Engineer and RPA Expert. Your task is to build a local GitOps AI Orchestrator using **Python**, **LangGraph**, **GitPython**, **pexpect**, and **pyautogui**.
 This script will act as a background state machine that reads a specific Markdown file (`roadmap.md`) synced via GitHub/Remote, executes tasks, manages Git branches, and **directly controls both CLI-based Agents and GUI-based IDEs (like VS Code)**.
 
-# Core Requirements (Preserved)
+# Core Requirements
 
 ## 1. State Management & Parsing (roadmap.md)
 
