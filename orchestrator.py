@@ -18,13 +18,17 @@ import argparse
 import logging
 import sys
 import time
+from pathlib import Path
 from typing import Any
+
+BASE_DIR = Path(__file__).parent.resolve()
 
 from langgraph.graph import END, StateGraph
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from config import (
     CHECKPOINT_DB,
+    ROADMAP_PATH,
     RPATarget,
     SysStatus,
     WorkflowMode,
@@ -209,6 +213,19 @@ def build_product_graph() -> StateGraph:
 _git_managers: dict[str, GitManager] = {}
 
 
+def _load_project_config(project_id: str) -> dict:
+    """Load a single project config from projects_config.json by ID."""
+    import json
+    config_path = BASE_DIR / "projects_config.json"
+    if not config_path.exists():
+        return {}
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        return next((p for p in data.get("projects", []) if p["id"] == project_id), {})
+    except Exception:
+        return {}
+
+
 def create_initial_state(
     mode: WorkflowMode,
     target: RPATarget,
@@ -224,6 +241,12 @@ def create_initial_state(
     to avoid msgpack serialization errors with LangGraph's SqliteSaver.
     Only the string key 'rpa_key' is stored in the state.
     """
+    # Load project-specific settings from projects_config.json
+    project_cfg = _load_project_config(project_id)
+    results_log_path = project_cfg.get("results_log_path", "")
+    roadmap_path = project_cfg.get("roadmap_path", str(ROADMAP_PATH))
+    project_name = project_cfg.get("name", project_id)
+
     state = {
         "mode": mode.value,
         "rpa_target": target.value,   # Store as string, not enum, for serialization
@@ -231,12 +254,15 @@ def create_initial_state(
         "cli_command": cli_command,
         "dry_run": dry_run,
         "project_id": project_id,
+        "project_name": project_name,
+        "roadmap_path": roadmap_path,       # Per-project path (overrides config.py default)
+        "results_log_path": results_log_path,  # For results_log_manager
         "should_exit": False,
         "exit_reason": None,
         "retry_count": 0,
         "context_compacted": False,
-        "rpa_key": project_id,        # Key into rpa_registry — replaces rpa_controller in state
-        "git_manager_key": project_id,  # Git manager also stored externally below
+        "rpa_key": project_id,              # Key into rpa_registry
+        "git_manager_key": project_id,      # Key into _git_managers
     }
 
     # Initialize RPA controller in registry (NOT in state)
@@ -247,8 +273,13 @@ def create_initial_state(
     rpa_registry.register_rpa(rpa, key=project_id)
     logger.info(f"RPAController registered with key: {project_id}")
 
-    # Initialize Git manager — also kept in module-level dict to avoid serialization issues
-    _git_managers[project_id] = GitManager()
+    # Initialize Git manager in module-level dict (also NOT in state)
+    from pathlib import Path as _Path
+    repo_path = _Path(roadmap_path).parent if roadmap_path else None
+    _git_managers[project_id] = GitManager(repo_path=repo_path)
+
+    logger.info(f"Project: {project_name} | roadmap: {roadmap_path}")
+    logger.info(f"Results log: {results_log_path or '(not configured)'}")
 
     return state
 
@@ -259,6 +290,7 @@ def run_orchestrator(
     gui_target: str = "vscode",
     cli_command: str = "claude",
     dry_run: bool = False,
+    project_id: str = "default",
 ):
     """
     Run the orchestrator with the specified workflow and target.
@@ -282,11 +314,16 @@ def run_orchestrator(
         # Dry-run: compile without checkpointer, just validate
         compiled = graph.compile()
         logger.info("DRY RUN: Graph compiled successfully. Validating roadmap...")
-        roadmap = parse_roadmap()
+        # Use project-specific roadmap if available
+        project_cfg = _load_project_config(project_id)
+        roadmap_path_str = project_cfg.get("roadmap_path", "")
+        from pathlib import Path as _Path
+        rp = _Path(roadmap_path_str) if roadmap_path_str else None
+        roadmap = parse_roadmap(path=rp)
         logger.info(f"  System status: {roadmap.sys_status.value}")
         logger.info(f"  Tasks: {len(roadmap.tasks)}")
         for task in roadmap.tasks:
-            marker = "→" if task.is_current or task.status == "current" else " "
+            marker = "->" if task.is_current or task.status == "current" else " "
             logger.info(f"  {marker} [{task.status}] {task.name}: {task.title}")
         logger.info("DRY RUN complete. All systems nominal.")
         return
@@ -298,6 +335,7 @@ def run_orchestrator(
         gui_target=gui_target,
         cli_command=cli_command,
         dry_run=dry_run,
+        project_id=project_id,
     )
 
     # Run the graph with SQLite checkpointing (context manager)
@@ -399,6 +437,13 @@ Examples:
         help="Validate graph and roadmap without executing",
     )
 
+    parser.add_argument(
+        "--project-id",
+        type=str,
+        default="default",
+        help="Project ID from projects_config.json (determines roadmap and results_log paths)",
+    )
+
     args = parser.parse_args()
 
     run_orchestrator(
@@ -407,6 +452,7 @@ Examples:
         gui_target=args.gui_target,
         cli_command=args.cli_command,
         dry_run=args.dry_run,
+        project_id=args.project_id,
     )
 
 

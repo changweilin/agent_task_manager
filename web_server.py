@@ -363,6 +363,7 @@ async def start_orchestrator(req: OrchestratorStartRequest):
         "--target", req.target,
         "--gui-target", req.gui_target,
         "--cli-command", req.cli_command,
+        "--project-id", req.project_id,   # Pass project ID for per-project config
     ]
     if req.dry_run:
         cmd.append("--dry-run")

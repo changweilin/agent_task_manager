@@ -26,23 +26,34 @@ def _get_git(state: dict) -> "GitManager":
     git_key = state.get("git_manager_key", "default")
     return _git_managers.get(git_key) or GitManager()
 
+
+def _get_roadmap_path(state: dict):
+    """Return Path object for this project's roadmap.md (or None for default)."""
+    from pathlib import Path as _P
+    rp_str = state.get("roadmap_path", "")
+    return _P(rp_str) if rp_str else None
+
 logger = logging.getLogger(__name__)
 
 
 def parse_roadmap_and_sync(state: dict[str, Any]) -> dict[str, Any]:
     """
     Node: Pull latest from Git, parse roadmap.md, and update graph state.
-    This is typically the entry node for both workflows.
+    Uses the per-project roadmap_path from state (set by create_initial_state).
+    This is the entry node for both workflows.
     """
     git = _get_git(state)
 
-    # Pull latest changes
+    # Pull latest (Obsidian Sync or manual push may have updated the file)
     pull_ok = git.pull()
     if not pull_ok:
         logger.warning("Git pull failed — working with local copy")
 
-    # Parse roadmap
-    roadmap = parse_roadmap()
+    # Parse project-specific roadmap (falls back to config default)
+    from pathlib import Path as _P
+    roadmap_path_str = state.get("roadmap_path", "")
+    rp = _P(roadmap_path_str) if roadmap_path_str else None
+    roadmap = parse_roadmap(path=rp)
 
     # Check system status
     if roadmap.sys_status == SysStatus.SLEEP_RATE_LIMIT:
@@ -141,8 +152,9 @@ def handle_rate_limit(state: dict[str, Any]) -> dict[str, Any]:
 
     logger.warning(f"Rate limit hit. Sleeping until: {resume_time}")
 
-    # Update roadmap
+    # Update roadmap with per-project path
     update_roadmap(
+        path=_get_roadmap_path(state),
         sys_status=SysStatus.SLEEP_RATE_LIMIT,
         rate_limit_resume_time=resume_time,
         latest_action=f"Rate limit hit. Sleeping until {resume_time}",
@@ -194,6 +206,7 @@ def compact_context(state: dict[str, Any]) -> dict[str, Any]:
 
     # Reset token count in roadmap
     update_roadmap(
+        path=_get_roadmap_path(state),
         context_tokens=0,
         latest_action=f"Context compacted. {len(completed)} tasks summarized.",
     )

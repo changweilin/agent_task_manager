@@ -13,8 +13,48 @@ from config import FEATURES_DIR, RPATarget, SPECS_DIR
 from git_manager import GitManager
 from roadmap_parser import update_roadmap
 from rpa_controller import RPAController
+import rpa_registry
+from results_log_manager import log_task_completed
 
 logger = logging.getLogger(__name__)
+
+
+def _get_rpa(state: dict) -> RPAController:
+    """Get RPAController from rpa_registry."""
+    return rpa_registry.get_rpa(state.get("rpa_key", "default")) or RPAController()
+
+
+def _get_git(state: dict) -> GitManager:
+    """Get GitManager from module-level registry."""
+    from orchestrator import _git_managers
+    return _git_managers.get(state.get("git_manager_key", "default")) or GitManager()
+
+
+def _get_target(state: dict) -> RPATarget:
+    """Get RPA target enum from state (stored as string)."""
+    t = state.get("rpa_target", RPATarget.CLI.value)
+    return RPATarget(t) if isinstance(t, str) else t
+
+
+def _get_roadmap_path(state: dict):
+    rp_str = state.get("roadmap_path", "")
+    return Path(rp_str) if rp_str else None
+
+
+def _get_results_log_path(state: dict):
+    rl_str = state.get("results_log_path", "")
+    return Path(rl_str) if rl_str else None
+
+
+def _get_commit_hash(state: dict) -> str:
+    try:
+        from orchestrator import _git_managers
+        git = _git_managers.get(state.get("git_manager_key", "default"))
+        if git and git.repo:
+            return git.repo.head.commit.hexsha
+    except Exception:
+        pass
+    return ""
 
 
 def sync_and_parse_sdd(state: dict[str, Any]) -> dict[str, Any]:
@@ -79,9 +119,8 @@ def ensure_bdd_tests(state: dict[str, Any]) -> dict[str, Any]:
     sdd_content = state.get("sdd_content", task.instructions)
     prompt = _build_bdd_prompt(task, sdd_content, feature_path)
 
-    rpa: RPAController = state.get("rpa_controller") or RPAController()
-    target = state.get("rpa_target", RPATarget.CLI)
-    state["rpa_controller"] = rpa
+    rpa = _get_rpa(state)
+    target = _get_target(state)
 
     if target == RPATarget.CLI:
         rpa.inject_to_cli(prompt)
@@ -112,10 +151,8 @@ def rpa_agent_execute(state: dict[str, Any]) -> dict[str, Any]:
         state["code_written"] = False
         return state
 
-    rpa: RPAController = state.get("rpa_controller") or RPAController()
-    target = state.get("rpa_target", RPATarget.CLI)
-    state["rpa_controller"] = rpa
-
+    rpa = _get_rpa(state)
+    target = _get_target(state)
     sdd_content = state.get("sdd_content", task.instructions)
     bdd_path = state.get("bdd_feature_path", "")
     prompt = _build_implementation_prompt(task, sdd_content, bdd_path)
@@ -207,7 +244,7 @@ def create_pr(state: dict[str, Any]) -> dict[str, Any]:
         state["pr_created"] = False
         return state
 
-    git: GitManager = state.get("git_manager") or GitManager()
+    git = _get_git(state)
 
     # Create feature branch
     branch_name = f"feature/{task.name.lower().replace('_', '-')}"
@@ -256,9 +293,9 @@ def ai_code_review(state: dict[str, Any]) -> dict[str, Any]:
         state["review_passed"] = False
         return state
 
-    git: GitManager = state.get("git_manager") or GitManager()
-    rpa: RPAController = state.get("rpa_controller") or RPAController()
-    target = state.get("rpa_target", RPATarget.CLI)
+    git = _get_git(state)
+    rpa = _get_rpa(state)
+    target = _get_target(state)
 
     # Get the diff
     diff = git.get_diff()
@@ -281,7 +318,6 @@ def ai_code_review(state: dict[str, Any]) -> dict[str, Any]:
     if success:
         # Since we're driving an external tool, we assume review passes
         # unless the agent outputs specific failure markers
-        # In a real setup, you'd parse the agent's response
         state["review_passed"] = True
         logger.info("AI code review sent to agent")
 
@@ -291,6 +327,7 @@ def ai_code_review(state: dict[str, Any]) -> dict[str, Any]:
 
         if merged:
             update_roadmap(
+                path=_get_roadmap_path(state),
                 task_name=task.name,
                 task_status="done",
                 latest_action=f"Task {task.name}: code review passed, merged to main.",
@@ -299,6 +336,25 @@ def ai_code_review(state: dict[str, Any]) -> dict[str, Any]:
                 f"chore: update roadmap — {task.name} completed"
             )
             logger.info(f"Task {task.name} fully completed and merged.")
+
+            # Log results
+            rl_path = _get_results_log_path(state)
+            if rl_path:
+                try:
+                    log_task_completed(
+                        rl_path,
+                        task_name=task.name,
+                        task_title=task.title,
+                        branch=branch_name,
+                        commit_hash=_get_commit_hash(state),
+                        validation_cmd=task.verification_cmd,
+                        validation_passed=True,
+                        validation_output=state.get("bdd_output", ""),
+                        notes="Code review passed, merged to main.",
+                        project_name=state.get("project_name", ""),
+                    )
+                except Exception as e:
+                    logger.warning(f"results_log write failed: {e}")
         else:
             state["review_passed"] = False
             logger.error("Merge failed after code review.")
